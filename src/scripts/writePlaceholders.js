@@ -14,8 +14,8 @@ const writeSvg = (filename, { bg, fg, emoji, label, width = 800, height = 800 })
 };
 
 const PLACEHOLDERS = [
-  { file: "store-noida.svg", bg: "#1b5e20", fg: "#e8f5e9", emoji: "🌾", label: "GreenFarm Noida", width: 800, height: 800 },
-  { file: "store-delhi.svg", bg: "#33691e", fg: "#f1f8e9", emoji: "🌿", label: "GreenFarm Delhi", width: 800, height: 800 },
+  { file: "store-noida.svg", bg: "#1c1917", fg: "#f3eee4", emoji: "🌾", label: "Maati Noida", width: 800, height: 800 },
+  { file: "store-delhi.svg", bg: "#8b3a2a", fg: "#f3eee4", emoji: "🌿", label: "Maati Delhi", width: 800, height: 800 },
   { file: "cat-vegetables.svg", bg: "#c8e6c9", fg: "#1b5e20", emoji: "🥦", label: "Vegetables" },
   { file: "cat-fruits.svg", bg: "#ffe0b2", fg: "#e65100", emoji: "🍎", label: "Fruits" },
   { file: "cat-dairy.svg", bg: "#e3f2fd", fg: "#0d47a1", emoji: "🥛", label: "Dairy" },

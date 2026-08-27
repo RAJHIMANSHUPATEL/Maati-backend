@@ -384,7 +384,7 @@ const seed = async () => {
   ]);
 
   await SiteSettings.create({
-    supportEmail: "support@greenfarm.test",
+    supportEmail: "support@maati.test",
     supportPhone: "+91 98765 43210",
     currencySymbol: "₹",
     lowStockThreshold: 5,

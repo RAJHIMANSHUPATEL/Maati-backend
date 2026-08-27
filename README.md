@@ -1,6 +1,6 @@
-# Retail Backend
+# Maati backend
 
-Node.js + Express + MongoDB API for the GreenFarm website and CRM.
+Node.js + Express + MongoDB API for the Maati website and CRM.
 
 ## Run
 
