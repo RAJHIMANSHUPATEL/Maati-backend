@@ -3,6 +3,7 @@ const Subcategory = require("../../models/subcategory.model");
 const Product = require("../../models/product.model");
 const Store = require("../../models/store.model");
 const mongoose = require('mongoose');
+const { storeScope, assertStore } = require("../../utils/storeAccess");
 
 /**
  * Controller to get stores.
@@ -15,7 +16,7 @@ const getStore = async (req, res) => {
     try {
         const { _id } = req.query;
         if (!_id) {
-            const stores = await Store.find({}, '_id name status cover').sort({ _id: -1 });
+            const stores = await Store.find(storeScope(req, "_id"), '_id name status cover').sort({ _id: -1 });
             return res.status(200).json({ success: true, data: stores });
         }
 
@@ -28,6 +29,7 @@ const getStore = async (req, res) => {
         if (!store) {
             return res.status(400).json({ success: false, message: "Store not found" });
         }
+        if (!assertStore(req, res, store._id)) return;
         return res.status(200).json({ success: true, data: store });
     } catch (error) {
         console.error(error);

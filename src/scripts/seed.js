@@ -4,7 +4,7 @@
  *
  *   npm run seed
  */
-require("dotenv").config({ path: require("path").join(__dirname, "../../.env") });
+require("../config/loadEnv");
 
 const mongoose = require("mongoose");
 mongoose.set("strictQuery", true);
@@ -27,6 +27,8 @@ const SubMenu = require("../models/subMenu.model");
 const StockMovement = require("../models/stockMovement.model");
 const OrderCounter = require("../models/orderCounter.model");
 const Subscriber = require("../models/subscriber.model");
+const PosConfiguration = require("../models/posConfiguration.model");
+const BarcodeProduct = require("../models/barcodeProduct.model");
 
 const LOCAL_DB = "ecom_pos";
 
@@ -173,7 +175,7 @@ const seed = async () => {
   const collections = [
     User, Store, Category, Subcategory, Product, Coupon, Order, Banner,
     SiteSettings, PolicyPage, City, Contact, SubMenu, StockMovement,
-    OrderCounter, Subscriber,
+    OrderCounter, Subscriber, PosConfiguration, BarcodeProduct,
   ];
   await Promise.all(collections.map((model) => model.deleteMany({})));
   console.log("Cleared ecom_pos collections");
@@ -188,11 +190,13 @@ const seed = async () => {
       email: "admin@greenfarm.test",
       password: adminPass,
       gender: "other",
-      type: "admin",
+      type: "owner",
       status: "active",
       cover: AVATAR,
       mobile: "9876543210",
       country_code: "+91",
+      staff_code: "9001",
+      staff_pin: "1111",
     },
     {
       first_name: "Ops",
@@ -200,11 +204,13 @@ const seed = async () => {
       email: "ops@greenfarm.test",
       password: adminPass,
       gender: "female",
-      type: "admin",
+      type: "manager",
       status: "active",
       cover: AVATAR,
       mobile: "9876543211",
       country_code: "+91",
+      staff_code: "2001",
+      staff_pin: "1111",
     },
     {
       first_name: "Rahul",
@@ -320,8 +326,116 @@ const seed = async () => {
     },
   ]);
 
+  await User.findByIdAndUpdate(ops._id, { $set: { stores: [noida._id] } });
+  await User.create([
+    {
+      first_name: "Noida",
+      last_name: "Cashier",
+      email: "cashier.noida@greenfarm.test",
+      password: adminPass,
+      gender: "male",
+      type: "cashier",
+      status: "active",
+      cover: AVATAR,
+      mobile: "9876543220",
+      country_code: "+91",
+      stores: [noida._id],
+      staff_code: "1001",
+      staff_pin: "1111",
+    },
+    {
+      first_name: "Delhi",
+      last_name: "Cashier",
+      email: "cashier.delhi@greenfarm.test",
+      password: adminPass,
+      gender: "female",
+      type: "cashier",
+      status: "active",
+      cover: AVATAR,
+      mobile: "9876543221",
+      country_code: "+91",
+      stores: [delhi._id],
+      staff_code: "1002",
+      staff_pin: "1111",
+    },
+  ]);
+
   const noidaProducts = await seedStoreCatalog(noida);
   const delhiProducts = await seedStoreCatalog(delhi);
+
+  await PosConfiguration.create([
+    {
+      store_ip: "192.168.1.11",
+      mac_address: "aa:bb:cc:dd:ee:11",
+      weight_scale_port: "COM3",
+      store: noida._id,
+      baud_rate: 9600,
+      data_bits: 8,
+      parity: "none",
+      stop_bits: 1,
+      flow_type: false,
+      printer_ip: "192.168.1.21",
+      printer_port: 9100,
+      surcharge: 0,
+      status: "active",
+      pos_name: "NOIDA T1",
+      pos_pin: "1234",
+    },
+    {
+      store_ip: "192.168.1.12",
+      mac_address: "aa:bb:cc:dd:ee:22",
+      weight_scale_port: "COM3",
+      store: delhi._id,
+      baud_rate: 9600,
+      data_bits: 8,
+      parity: "none",
+      stop_bits: 1,
+      flow_type: false,
+      printer_ip: "192.168.1.22",
+      printer_port: 9100,
+      surcharge: 0,
+      status: "active",
+      pos_name: "DELHI T1",
+      pos_pin: "1234",
+    },
+  ]);
+
+  const barcodePairs = [
+    { name: "Palak (Spinach)", noida: "8901234000011", delhi: "8901234000042" },
+    { name: "Dhaniya bunch", noida: "8901234000028", delhi: "8901234000059" },
+    { name: "Mustard oil 1L", noida: "8901234000035", delhi: "8901234000066" },
+  ];
+  const barcodeDocs = [];
+  for (const storePack of [
+    { store: noida, products: noidaProducts, city: "noida" },
+    { store: delhi, products: delhiProducts, city: "delhi" },
+  ]) {
+    for (const pair of barcodePairs) {
+      const product = storePack.products.find((p) => p.name === pair.name);
+      if (!product) continue;
+      barcodeDocs.push({
+        store: storePack.store._id,
+        cover: product.cover,
+        name: product.name,
+        images: product.images || [],
+        original_price: product.onlinePrice,
+        sell_price: product.posPrice,
+        discount: product.discount,
+        descriptions: product.description,
+        status: "active",
+        category: product.category,
+        sub_category: product.subCategory,
+        in_stock: product.stockStatus,
+        unit: product.quantityUnit,
+        quantity: product.quantity,
+        stock_quantity: product.quantity,
+        barcode: storePack.city === "delhi" ? pair.delhi : pair.noida,
+      });
+    }
+  }
+  if (barcodeDocs.length) {
+    await BarcodeProduct.create(barcodeDocs);
+  }
 
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
@@ -517,10 +631,13 @@ const seed = async () => {
   }
 
   console.log("\nSeeded ecom_pos");
-  console.log("  CRM login:      admin@greenfarm.test / Admin@123");
+  console.log("  CRM owner:      admin@greenfarm.test / Admin@123");
+  console.log("  CRM manager:    ops@greenfarm.test / Admin@123  (Noida only)");
   console.log("  Website login:  customer@greenfarm.test / Customer@123");
   console.log("  Coupons:        FARM10 (Noida 10%), FLAT50 (Noida ₹50), WELCOME20 (Delhi 20%)");
-  console.log(`  Stores:         ${noida.name}, ${delhi.name}`);
+  console.log("  POS tills:      NOIDA T1 / 1234, DELHI T1 / 1234");
+  console.log("  POS sign-on:    Noida 1001 / 1111, Delhi 1002 / 1111, manager 2001 / 1111");
+  console.log("  Barcode demo:   8901234000011 (Noida Palak)");
   console.log(`  Products/store: ${noidaProducts.length}`);
   console.log(`  Orders:         ${orders.length}`);
 };

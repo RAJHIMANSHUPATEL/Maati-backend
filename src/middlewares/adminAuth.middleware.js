@@ -1,41 +1,83 @@
 const jwt = require("jsonwebtoken");
-const dotenv = require('dotenv');
 const User = require("../models/user.model");
-dotenv.config()
 
-/**
- * Middleware to check if the user is an admin.
- * It verifies the JWT token from the request header and checks if the user type is 'admin'.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
- * @param {function} next - The next middleware function.
- */
-const checkAdmin = async (req, res, next) => {
-  // Get the token from the 'AuthToken' header
-  const token = req.header('AuthToken');
+const OWNERS = new Set(["owner", "admin"]);
+const CRM_STAFF = new Set(["owner", "admin", "manager"]);
+const TILL_STAFF = new Set(["owner", "admin", "manager", "cashier"]);
+
+const isOwner = (user) => OWNERS.has(user?.type);
+const staffRole = (user) => (user?.type === "admin" ? "owner" : user?.type);
+
+const storeIds = (user) => (user?.stores || []).map((id) => String(id._id || id));
+
+const storeScope = (req, field = "store") => {
+  if (isOwner(req.admin)) return {};
+  return { [field]: { $in: req.admin.stores || [] } };
+};
+
+const canAccessStore = (req, storeId) => {
+  if (!storeId) return false;
+  if (isOwner(req.admin)) return true;
+  return storeIds(req.admin).includes(String(storeId));
+};
+
+const denyStore = (res) =>
+  res.status(403).json({ success: false, message: "Not allowed for this store" });
+
+const loadCrmUser = async (req, res) => {
+  const token = req.header("AuthToken");
   if (!token) {
-    return res.status(401).send({ success: false, message: "Access Denied! Token is required" });
+    res.status(401).send({ success: false, message: "Access Denied! Token is required" });
+    return null;
   }
-
   try {
-    // Verify the token using the JWT secret
     const data = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Find the user by the ID from the token
     const user = await User.findOne({ _id: data.user.id });
-
-    // Check if the user exists and has the 'admin' type
-    if (user && user.type === "admin") {
-      req.admin = user;
-      next();
-    } else {
-      // If the user is not an admin, send an access denied error
+    if (!user || user.status !== "active") {
       res.status(401).send({ success: false, message: "Access Denied! Invalid token" });
+      return null;
     }
+    return user;
   } catch (error) {
-    console.error(error);
-    res.status(401).send({ success: false, message: `Internal server error: ${error.message}` });
+    res.status(401).send({
+      success: false,
+      message: `Access Denied! ${error.message}`,
+    });
+    return null;
   }
 };
 
-module.exports = checkAdmin;
+const checkStaff = async (req, res, next) => {
+  const user = await loadCrmUser(req, res);
+  if (!user) return;
+  if (!CRM_STAFF.has(user.type)) {
+    return res.status(401).send({ success: false, message: "Access Denied! Invalid token" });
+  }
+  req.admin = user;
+  next();
+};
+
+const requireOwner = async (req, res, next) => {
+  const user = req.admin || (await loadCrmUser(req, res));
+  if (!user) return;
+  if (!isOwner(user)) {
+    return res.status(403).json({ success: false, message: "Owner access required" });
+  }
+  req.admin = user;
+  next();
+};
+
+checkStaff.checkStaff = checkStaff;
+checkStaff.checkAdmin = checkStaff;
+checkStaff.requireOwner = requireOwner;
+checkStaff.storeScope = storeScope;
+checkStaff.canAccessStore = canAccessStore;
+checkStaff.denyStore = denyStore;
+checkStaff.isOwner = isOwner;
+checkStaff.staffRole = staffRole;
+checkStaff.storeIds = storeIds;
+checkStaff.OWNERS = OWNERS;
+checkStaff.CRM_STAFF = CRM_STAFF;
+checkStaff.TILL_STAFF = TILL_STAFF;
+
+module.exports = checkStaff;

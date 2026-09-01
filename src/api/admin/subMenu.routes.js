@@ -12,10 +12,11 @@ const {
     updateSubMenuSchema,
     updateSubMenuStatusSchema,
 } = require("../../utils/zod.schema");
-const checkAdmin = require("../../middlewares/adminAuth.middleware");
+const checkStaff = require("../../middlewares/adminAuth.middleware");
+const { requireOwner } = require("../../middlewares/adminAuth.middleware");
 
-router.use(checkAdmin);
-router.get("/", getSubMenu); // get all or filtered
+router.use(checkStaff, requireOwner);
+router.get("/", getSubMenu);
 router.post("/add", validate(addSubMenuSchema), addSubMenu);
 router.post("/update", validate(updateSubMenuSchema), updateSubMenu);
 router.post("/updatestatus", validate(updateSubMenuStatusSchema), updateSubMenuStatus);

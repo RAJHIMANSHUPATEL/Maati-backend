@@ -543,6 +543,9 @@ const updateSubMenuStatusSchema = z.object({
 });
 
 // User Schemas
+const staffTypeEnum = z.enum(["owner", "manager", "cashier", "admin"]);
+const objectIdString = z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid store id");
+
 const registerUserSchema = z.object({
   body: z.object({
     first_name: z.string().min(1, "First name is required"),
@@ -555,13 +558,16 @@ const registerUserSchema = z.object({
         "Password must be 8-20 characters long, contain at least one uppercase letter, one lowercase letter, one number, and one special character"
       ),
     gender: z.enum(["male", "female", "other"]),
-    type: z.string().min(1, "User type is required"),
+    type: staffTypeEnum,
     status: z.enum(["active", "deactive"]).default("active"),
     cover: z.string().url("Invalid URL for cover image").optional(),
     mobile: z
       .string()
       .regex(/^\+?\d{9,15}$/, "Mobile number must be 7 to 15 digits"),
     country_code: z.string().min(1, "Country code is required"),
+    stores: z.array(objectIdString).optional(),
+    staff_code: z.string().regex(/^\d{4}$/, "Operator number must be 4 digits").optional(),
+    staff_pin: z.string().regex(/^\d{4}$/, "Staff PIN must be 4 digits").optional(),
   }),
 });
 
@@ -575,11 +581,12 @@ const loginUserSchema = z.object({
 const updateUserSchema = z.object({
   body: z
     .object({
+      _id: z.string().optional(),
       first_name: z.string().min(1, "First name is required").optional(),
       last_name: z.string().min(1, "Last name is required").optional(),
       email: z.string().email("Invalid email address").optional(),
       gender: z.enum(["male", "female", "other"]).optional(),
-      type: z.string().min(1, "User type is required").optional(),
+      type: staffTypeEnum.optional(),
       status: z.enum(["active", "deactive"]).optional(),
       cover: z.string().url("Invalid URL for cover image").optional(),
       mobile: z
@@ -587,7 +594,10 @@ const updateUserSchema = z.object({
         .regex(/^\d{9,11}$/, "Mobile number must be 7 to 15 digits")
         .optional(),
       country_code: z.string().min(1, "Country code is required").optional(),
-      address: z.array(z.object({})).optional(), // Assuming address is an array of objects, schema can be more detailed if needed
+      address: z.array(z.object({})).optional(),
+      stores: z.array(objectIdString).optional(),
+      staff_code: z.string().regex(/^\d{4}$/, "Operator number must be 4 digits").optional(),
+      staff_pin: z.string().regex(/^\d{4}$/, "Staff PIN must be 4 digits").optional(),
     })
     .refine((data) => Object.keys(data).length > 1, {
       message: "Data is required and cannot be empty",
@@ -1409,6 +1419,57 @@ const updateSettingsSchema = z.object({
   }),
 });
 
+const posObjectId = z
+  .string()
+  .regex(/^[0-9a-fA-F]{24}$/, "Invalid MongoDB ObjectId");
+
+const posUnlockSchema = z.object({
+  body: z.object({
+    posId: posObjectId,
+    pin: z.string().min(4, "PIN is required").max(8),
+  }),
+});
+
+const posBarcodeSchema = z.object({
+  body: z.object({
+    barcode: z.string().min(1, "Barcode is required"),
+  }),
+});
+
+const posSaleSchema = z.object({
+  body: z.object({
+    items: z
+      .array(
+        z.object({
+          product: posObjectId,
+          quantity: z.number().positive().optional(),
+          weight: z.number().positive().optional(),
+        })
+      )
+      .min(1, "Bag is empty"),
+    notes: z.string().optional(),
+    tender_amount: z.number().min(0, "Tender amount is required"),
+  }),
+});
+
+const posSaleIdSchema = z.object({
+  params: z.object({
+    id: posObjectId,
+  }),
+  body: z
+    .object({
+      pin: z.string().regex(/^\d{4}$/, "Manager PIN must be 4 digits").optional(),
+    })
+    .optional(),
+});
+
+const posSignonSchema = z.object({
+  body: z.object({
+    staff_code: z.string().regex(/^\d{4}$/, "Operator number must be 4 digits"),
+    pin: z.string().regex(/^\d{4}$/, "PIN must be 4 digits"),
+  }),
+});
+
 module.exports = {
   updateEcomUserPasswordSchema,
   updateEcomUserAddressSchema,
@@ -1497,4 +1558,9 @@ module.exports = {
   adjustStockSchema,
   validateCouponSchema,
   updateSettingsSchema,
+  posUnlockSchema,
+  posBarcodeSchema,
+  posSaleSchema,
+  posSaleIdSchema,
+  posSignonSchema,
 };

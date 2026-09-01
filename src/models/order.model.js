@@ -13,6 +13,13 @@ const orderSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    cashier_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    cashier_name: {
+      type: String,
+    },
     order_number: {
       type: String,
       required: true,

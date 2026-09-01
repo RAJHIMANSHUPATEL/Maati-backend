@@ -2,15 +2,56 @@ const User = require("../../models/user.model");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const mongoose = require("mongoose");
+const { CRM_STAFF, staffRole } = require("../../middlewares/adminAuth.middleware");
 
-/**
- * Controller to register a new user.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
- */
+const STAFF_TYPES = ["owner", "manager", "cashier"];
+const STAFF_QUERY = { type: { $in: ["owner", "admin", "manager", "cashier"] } };
+
+const displayName = (user) =>
+  `${user.first_name || ""} ${user.last_name || ""}`.trim();
+
+const staffPayload = (user) => ({
+  _id: user._id,
+  email: user.email,
+  first_name: user.first_name,
+  last_name: user.last_name,
+  name: displayName(user),
+  type: staffRole(user),
+  stores: user.stores || [],
+});
+
+const normalizeStaffType = (type) => {
+  if (type === "admin") return "owner";
+  return type;
+};
+
+const validateStaffFields = (detail, type) => {
+  if (!STAFF_TYPES.includes(type)) {
+    return "Role must be owner, manager, or cashier";
+  }
+  if (type === "manager" || type === "cashier") {
+    if (!/^\d{4}$/.test(String(detail.staff_code || ""))) {
+      return "Operator number must be 4 digits";
+    }
+    if (!/^\d{4}$/.test(String(detail.staff_pin || ""))) {
+      return "Staff PIN must be 4 digits";
+    }
+    if (!Array.isArray(detail.stores) || detail.stores.length === 0) {
+      return "Assign at least one store";
+    }
+  }
+  return null;
+};
+
 const registerUser = async (req, res) => {
   try {
     const userDetail = req.body;
+    const type = normalizeStaffType(userDetail.type);
+    const fieldError = validateStaffFields(userDetail, type);
+    if (fieldError) {
+      return res.status(400).send({ success: false, message: fieldError });
+    }
+
     const existingUser = await User.findOne({
       $or: [{ email: userDetail.email }, { mobile: userDetail.mobile }],
     });
@@ -21,27 +62,34 @@ const registerUser = async (req, res) => {
       });
     }
 
+    if (userDetail.staff_code) {
+      const codeTaken = await User.findOne({ staff_code: userDetail.staff_code });
+      if (codeTaken) {
+        return res.status(400).send({
+          success: false,
+          message: "Operator number is already in use",
+        });
+      }
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(userDetail.password, salt);
 
     const newUser = await User.create({
       ...userDetail,
-      type: "admin",
+      type,
+      stores: type === "owner" ? userDetail.stores || [] : userDetail.stores,
       password: hashedPassword,
     });
     res
       .status(201)
       .send({ success: true, message: "User registered successfully", data: newUser });
   } catch (error) {
+    console.error(error);
     res.status(500).send({ success: false, message: "Internal server error" });
   }
 };
 
-/**
- * Controller to log in a user.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
- */
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -49,7 +97,7 @@ const loginUser = async (req, res) => {
 
     if (
       !fetchedUser ||
-      fetchedUser.type !== "admin" ||
+      !CRM_STAFF.has(fetchedUser.type) ||
       fetchedUser.status !== "active"
     ) {
       return res
@@ -76,12 +124,9 @@ const loginUser = async (req, res) => {
       expiresIn: "1d",
     });
     res.send({
-      success: true, authToken, data: {
-        _id: fetchedUser._id,
-        email: fetchedUser.email,
-        name: fetchedUser.name,
-        type: fetchedUser.type,
-      }
+      success: true,
+      authToken,
+      data: staffPayload(fetchedUser),
     });
   } catch (error) {
     console.error(error);
@@ -89,32 +134,27 @@ const loginUser = async (req, res) => {
   }
 };
 
-/**
- * Controller to get all users or a single user by ID.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
- * @param {string} type - The type of user to fetch (e.g., "user", "admin").
- */
 const getUser = async (req, res, type) => {
   try {
-    const {_id} = req.query;
+    const { _id } = req.query;
+    const typeFilter = type === "staff" ? STAFF_QUERY : { type };
     if (!_id) {
-      // Fetch users of the given type and exclude the password field
-      const fetchedUsers = await User.find({ type: type })
+      const fetchedUsers = await User.find(typeFilter)
         .sort({ _id: -1 })
-        .select("-password");
+        .select("-password")
+        .populate("stores", "_id name");
       return res.status(200).json({ success: true, data: fetchedUsers });
     }
 
-    // Check if the provided ID is a valid ObjectId
     if (!mongoose.Types.ObjectId.isValid(_id)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid user id format" });
     }
 
-    // Fetch a single user of the given type and exclude the password field
-    const fetchedUser = await User.findOne({ _id }).select("-password");
+    const fetchedUser = await User.findOne({ _id, ...typeFilter })
+      .select("-password")
+      .populate("stores", "_id name");
     if (!fetchedUser) {
       return res
         .status(400)
@@ -128,22 +168,24 @@ const getUser = async (req, res, type) => {
   }
 };
 
-/**
- * Controller to update a user.
- * @param {object} req - The Express request object.
- * @param {object} res - The Express response object.
- */
 const updateUser = async (req, res) => {
   const { _id, ...data } = req.body;
 
-  // Delete password from the update data if exists
   if (data.password) {
     delete data.password;
   }
 
+  if (data.type) {
+    data.type = normalizeStaffType(data.type);
+    const fieldError = validateStaffFields({ ...data }, data.type);
+    if (fieldError) {
+      return res.status(400).send({ success: false, message: fieldError });
+    }
+  }
+
   const existingUser = await User.findOne({
     $or: [{ email: data.email }, { mobile: data.mobile }],
-    _id: { $ne: _id }, // Exclude the current user with the provided _id
+    _id: { $ne: _id },
   });
 
   if (existingUser) {
@@ -153,36 +195,45 @@ const updateUser = async (req, res) => {
     });
   }
 
+  if (data.staff_code) {
+    const codeTaken = await User.findOne({
+      staff_code: data.staff_code,
+      _id: { $ne: _id },
+    });
+    if (codeTaken) {
+      return res.status(400).send({
+        success: false,
+        message: "Operator number is already in use",
+      });
+    }
+  }
+
   try {
-    // Find and update the user record
     const updatedConfig = await User.findOneAndUpdate(
       { _id },
       { $set: data },
-      { new: true, runValidators: true } // Ensures validators are executed on update
-    );
+      { new: true, runValidators: true }
+    ).populate("stores", "_id name");
 
-    // If no matching record is found
     if (!updatedConfig) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
 
-    // Successfully updated record
     res.status(200).json({
       success: true,
       message: "User updated successfully",
-      data: updatedConfig, // Return the updated record for confirmation
+      data: updatedConfig,
     });
   } catch (error) {
-    console.error("Update failed:", error); // Log the error for debugging purposes
+    console.error("Update failed:", error);
     res.status(500).json({
       success: false,
       message: error.message || "An error occurred while updating the user",
     });
   }
 };
-
 
 const updateUserStatus = async (req, res) => {
   const { _id, status } = req.body;
@@ -209,7 +260,8 @@ const updateUserStatus = async (req, res) => {
 const getUserCount = async (req, res) => {
   try {
     const type = req.query.type || "user";
-    const total = await User.countDocuments({ type });
+    const filter = type === "staff" ? STAFF_QUERY : { type };
+    const total = await User.countDocuments(filter);
     return res.status(200).json({ success: true, total });
   } catch (error) {
     console.error(error);

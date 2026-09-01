@@ -4,6 +4,7 @@ const {
   restoreStock,
   parseProductDetails,
 } = require("../ecommerce/order.controller");
+const { storeScope, assertStore, idOf } = require("../../utils/storeAccess");
 
 const ORDER_STATUSES = [
   "pending",
@@ -18,7 +19,7 @@ const getOrder = async (req, res) => {
   try {
     const id = req.query.id;
     if (!id) {
-      const fetchedOrder = await Order.find()
+      const fetchedOrder = await Order.find(storeScope(req, "store_id"))
         .populate("store_id", "_id name")
         .populate("user_id", "_id first_name last_name email mobile")
         .populate("coupon_code")
@@ -41,6 +42,7 @@ const getOrder = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Order not found" });
     }
+    if (!assertStore(req, res, idOf(fetchedOrder.store_id))) return;
 
     return res.status(200).json({ success: true, data: fetchedOrder });
   } catch (error) {
@@ -55,6 +57,7 @@ const getOrderByMonth = async (req, res) => {
 
   try {
     const orderCount = await Order.aggregate([
+      { $match: storeScope(req, "store_id") },
       {
         $project: {
           year: { $year: "$createdAt" },
@@ -113,6 +116,7 @@ const getOrderByDate = async (req, res) => {
     endDate.setHours(23, 59, 59, 999);
 
     const orders = await Order.find({
+      ...storeScope(req, "store_id"),
       createdAt: {
         $gte: startDate,
         $lte: endDate,
@@ -148,6 +152,7 @@ const getOrderByUserId = async (req, res) => {
   try {
     const orders = await Order.find({
       user_id: userId,
+      ...storeScope(req, "store_id"),
     })
       .populate("store_id", "_id name")
       .sort({ createdAt: -1 });
@@ -167,7 +172,7 @@ const getOrderCount = async (req, res) => {
   const start_date = req.query.start_date;
   const end_date = req.query.end_date;
   try {
-    const filter = {};
+    const filter = { ...storeScope(req, "store_id") };
     if (start_date && end_date) {
       const startDate = new Date(start_date);
       const endDate = new Date(end_date);
@@ -217,6 +222,7 @@ const updateOrder = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Order not found" });
     }
+    if (!assertStore(req, res, idOf(existing.store_id))) return;
 
     const previousStatus = existing.order_status;
     const updates = {};

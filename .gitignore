@@ -3,7 +3,13 @@
 # dependencies
 /node_modules
 /.pnp
+# secrets
 .env
+.env.development
+.env.demo
+.env.production
+.env.local
+.env.*.local
 .pnp.js
 .newapi.zip
 

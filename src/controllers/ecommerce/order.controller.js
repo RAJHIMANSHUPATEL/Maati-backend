@@ -245,4 +245,6 @@ module.exports = {
   addOrder,
   restoreStock,
   parseProductDetails,
+  validateOrderItems,
+  decrementStock,
 };

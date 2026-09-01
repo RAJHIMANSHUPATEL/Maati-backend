@@ -1,5 +1,6 @@
 const Coupon = require("../../models/coupon.model");
 const mongoose = require('mongoose');
+const { storeScope, assertStore, idOf } = require("../../utils/storeAccess");
 
 /**
  * Controller to get coupons.
@@ -12,7 +13,7 @@ const getCoupon = async (req, res) => {
     try {
         const { _id } = req.query;
         if (!_id) {
-            const fetchedCoupon = await Coupon.find({}, "_id status store couponCode").sort({ _id: -1 }).populate('store', '_id name');
+            const fetchedCoupon = await Coupon.find(storeScope(req, "store"), "_id status store couponCode").sort({ _id: -1 }).populate('store', '_id name');
             return res.status(200).json({ success: true, data: fetchedCoupon });
         }
 
@@ -25,6 +26,7 @@ const getCoupon = async (req, res) => {
         if (!fetchedCoupon) {
             return res.status(400).json({ success: false, message: "Coupon not found" });
         }
+        if (!assertStore(req, res, idOf(fetchedCoupon.store))) return;
 
         return res.status(200).json({ success: true, data: fetchedCoupon });
     } catch (error) {
@@ -40,6 +42,7 @@ const getCoupon = async (req, res) => {
  */
 const addCoupon = async (req, res) => {
     const data = req.body;
+    if (!assertStore(req, res, data.store)) return;
     try {
         // Check if the data already exists
         const existingCoupon = await Coupon.findOne({ couponCode: data.couponCode });
@@ -63,6 +66,7 @@ const addCoupon = async (req, res) => {
  */
 const updateCoupon = async (req, res) => {
     const { _id, ...data } = req.body;
+    if (!assertStore(req, res, data.store)) return;
 
     const existingCoupon = await Coupon.findOne({
         couponCode: data.couponCode,
@@ -113,17 +117,17 @@ const updateCouponStatus = async (req, res) => {
     const { _id, status } = req.body;
 
     try {
-        // Find and update the coupon record
+        const existing = await Coupon.findById(_id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Coupon not found" });
+        }
+        if (!assertStore(req, res, idOf(existing.store))) return;
+
         const updatedCoupon = await Coupon.findByIdAndUpdate(
             { _id },
             { $set: { status } },
-            { new: true, runValidators: true } // Ensures validators are executed on update
+            { new: true, runValidators: true }
         );
-
-        // If no matching record is found
-        if (!updatedCoupon) {
-            return res.status(404).json({ success: false, message: "Coupon not found" });
-        }
 
         // Successfully updated record
         res.status(200).json({

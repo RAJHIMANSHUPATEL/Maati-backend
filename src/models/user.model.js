@@ -38,6 +38,21 @@ const userSchema = new mongoose.Schema({
     "type": {
         type: String,
         required: true,
+        enum: ["owner", "manager", "cashier", "user", "admin"],
+    },
+    "stores": {
+        type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Store" }],
+        default: [],
+    },
+    "staff_code": {
+        type: String,
+        trim: true,
+        sparse: true,
+        unique: true,
+    },
+    "staff_pin": {
+        type: String,
+        trim: true,
     },
     "status": {
         type: String,
@@ -66,7 +81,6 @@ const userSchema = new mongoose.Schema({
     })
 
 
-// 🔐 Automatically remove password when converting to JSON
 userSchema.set("toJSON", {
     transform: function (doc, ret) {
         delete ret.password;
@@ -74,7 +88,6 @@ userSchema.set("toJSON", {
     }
 });
 
-// Or if you also use toObject(), apply to both
 userSchema.set("toObject", {
     transform: function (doc, ret) {
         delete ret.password;

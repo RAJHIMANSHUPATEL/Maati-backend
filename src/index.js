@@ -1,13 +1,11 @@
+require("./config/loadEnv");
+
 const express = require('express');
 const path = require("path");
 const cors = require('cors');
-const dotenv = require('dotenv');
 const connectToMongo = require('./config/db');
 const { CronJob } = require('cron');
 const createBackup = require('./utils/backup');
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -20,9 +18,25 @@ const corsOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const originAllowed = (origin) => {
+  if (!origin || !corsOrigins.length) return true;
+  return corsOrigins.some((pattern) => {
+    if (pattern === origin) return true;
+    if (pattern.startsWith("*.") && origin.endsWith(pattern.slice(1))) return true;
+    return false;
+  });
+};
+
 app.use(
   cors({
-    origin: corsOrigins.length ? corsOrigins : true,
+    origin: (origin, callback) => {
+      if (originAllowed(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "AuthToken"],
   })
@@ -31,10 +45,16 @@ app.use(
 const adminRoutes = require('./api/admin');
 const driverRoutes = require('./api/driver');
 const ecommerceRoutes = require('./api/ecommerce');
+const posRoutes = require('./api/pos');
+
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, env: process.env.APP_ENV || "development" });
+});
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/driver', driverRoutes);
 app.use('/api/ecommerce', ecommerceRoutes);
+app.use('/api/pos', posRoutes);
 
 const start = async () => {
   await connectToMongo();
@@ -50,7 +70,9 @@ const start = async () => {
   );
   void job;
   app.listen(port, () => {
-    console.log(`E-commerce backend listening at http://localhost:${port}`);
+    console.log(
+      `Maati API (${process.env.APP_ENV || "development"}) listening at http://localhost:${port}`
+    );
   });
 };
 

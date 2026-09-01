@@ -1,5 +1,6 @@
 const Product = require("../../models/product.model");
 const mongoose = require("mongoose");
+const { storeScope, assertStore, idOf } = require("../../utils/storeAccess");
 
 /**
  * Controller to get products.
@@ -12,7 +13,7 @@ const getProducts = async (req, res) => {
     try {
         const { _id } = req.query;
         if (!_id) {
-            const fetchedProduct = await Product.find({}, "_id name category onlinePrice status cover quantity stockStatus store")
+            const fetchedProduct = await Product.find(storeScope(req, "store"), "_id name category onlinePrice status cover quantity stockStatus store")
                 .populate({
                     path: "store",
                     select: "_id name status"
@@ -44,6 +45,7 @@ const getProducts = async (req, res) => {
         if (!fetchedProduct) {
             return res.status(400).json({ success: false, message: "Product not found" });
         }
+        if (!assertStore(req, res, idOf(fetchedProduct.store))) return;
 
         return res.status(200).json({ success: true, data: fetchedProduct });
     } catch (error) {
@@ -59,6 +61,7 @@ const getProducts = async (req, res) => {
  */
 const addProduct = async (req, res) => {
     const data = req.body;
+    if (!assertStore(req, res, data.store)) return;
     try {
         // Check if the data already exists
         const existingRecord = await Product.findOne({ name: data.name, store: data.store, category: data.category });
@@ -82,6 +85,12 @@ const addProduct = async (req, res) => {
  */
 const updateProduct = async (req, res) => {
     const { _id, ...data } = req.body;
+    const current = await Product.findById(_id);
+    if (!current) {
+        return res.status(404).json({ success: false, message: "Product not found" });
+    }
+    if (!assertStore(req, res, idOf(current.store))) return;
+    if (!assertStore(req, res, data.store)) return;
 
     const existingProduct = await Product.findOne({
         name: data.name,
@@ -132,7 +141,7 @@ const updateProduct = async (req, res) => {
  */
 const getProductCount = async (req, res) => {
     try {
-        const totalProducts = await Product.countDocuments();
+        const totalProducts = await Product.countDocuments(storeScope(req, "store"));
         res.status(200).json({ success: true, total: totalProducts });
     } catch (error) {
         console.error("Error fetching product count:", error);
@@ -148,6 +157,7 @@ const getProductCount = async (req, res) => {
 const getProductsByCategory = async (req, res) => {
     try {
         const productCount = await Product.aggregate([
+            { $match: storeScope(req, "store") },
             {
                 $group: {
                     _id: "$category",
@@ -192,17 +202,17 @@ const updateProductStatus = async (req, res) => {
     const { _id, status } = req.body;
 
     try {
-        // Find and update the product record
+        const existing = await Product.findById(_id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Product not found" });
+        }
+        if (!assertStore(req, res, idOf(existing.store))) return;
+
         const updatedConfig = await Product.findOneAndUpdate(
             { _id },
             { $set: { status: status } },
-            { new: true, runValidators: true } // Ensures validators are executed on update
+            { new: true, runValidators: true }
         );
-
-        // If no matching record is found
-        if (!updatedConfig) {
-            return res.status(404).json({ success: false, message: "Product not found" });
-        }
 
         // Successfully updated record
         res.status(200).json({
@@ -234,6 +244,7 @@ const adjustStock = async (req, res) => {
         if (!product) {
             return res.status(404).json({ success: false, message: "Product not found" });
         }
+        if (!assertStore(req, res, idOf(product.store))) return;
 
         const delta = nextQty - Number(product.quantity || 0);
         product.quantity = nextQty;
@@ -266,7 +277,7 @@ const getLowStock = async (req, res) => {
         const SiteSettings = require("../../models/siteSettings.model");
         const settings = await SiteSettings.findOne();
         const threshold = Number(req.query.threshold ?? settings?.lowStockThreshold ?? 5);
-        const products = await Product.find({ quantity: { $lte: threshold } })
+        const products = await Product.find({ quantity: { $lte: threshold }, ...storeScope(req, "store") })
             .populate("store", "_id name")
             .populate("category", "_id name")
             .sort({ quantity: 1 });

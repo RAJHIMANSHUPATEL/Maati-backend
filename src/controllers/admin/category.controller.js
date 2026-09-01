@@ -2,6 +2,7 @@ const Category = require("../../models/category.model");
 const Subcategory = require("../../models/subcategory.model");
 const Product = require("../../models/product.model");
 const mongoose = require('mongoose');
+const { storeScope, assertStore, idOf } = require("../../utils/storeAccess");
 
 /**
  * Controller to get categories.
@@ -14,7 +15,7 @@ const getCategory = async (req, res) => {
     try {
         const { _id } = req.query;
         if (!_id) {
-            const fetchedCategory = await Category.find({}, "_id name status store cover").sort({ _id: -1 }).populate([
+            const fetchedCategory = await Category.find(storeScope(req, "store"), "_id name status store cover").sort({ _id: -1 }).populate([
                 {
                     path: 'store',
                     select: '_id name',
@@ -37,6 +38,7 @@ const getCategory = async (req, res) => {
         if (!fetchedCategory) {
             return res.status(400).json({ success: false, message: "Category not found" });
         }
+        if (!assertStore(req, res, idOf(fetchedCategory.store))) return;
 
         return res.status(200).json({ success: true, data: fetchedCategory });
     } catch (error) {
@@ -52,6 +54,7 @@ const getCategory = async (req, res) => {
  */
 const addCategory = async (req, res) => {
     const data = req.body;
+    if (!assertStore(req, res, data.store)) return;
     try {
         // Check if the data already exists
         const existingRecord = await Category.findOne({ name: data.name, store: data.store });
@@ -75,6 +78,7 @@ const addCategory = async (req, res) => {
  */
 const updateCategory = async (req, res) => {
     const { _id, ...data } = req.body;
+    if (!assertStore(req, res, data.store)) return;
 
     const existingCategory = await Category.findOne({
         name: data.name,
@@ -125,17 +129,17 @@ const updateCategoryStatus = async (req, res) => {
     const { _id, status } = req.body;
 
     try {
-        // Find and update the category record
+        const existing = await Category.findById(_id);
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Category not found" });
+        }
+        if (!assertStore(req, res, idOf(existing.store))) return;
+
         const updatedConfig = await Category.findOneAndUpdate(
             { _id },
             { $set: { status: status } },
-            { new: true, runValidators: true } // Ensures validators are executed on update
+            { new: true, runValidators: true }
         );
-
-        // If no matching record is found
-        if (!updatedConfig) {
-            return res.status(404).json({ success: false, message: "Category not found" });
-        }
 
         if (status === "deactive") {
             await cascadeDeactivateCategory(_id);
@@ -171,6 +175,7 @@ const getCategoryByStoreId = async (req, res) => {
     const { store_id } = req.query;
 
     if (!store_id) return res.status(400).json({ error: 'Missing store_id' });
+    if (!assertStore(req, res, store_id)) return;
 
     try {
         const categories = await Category.find({ store: store_id }, '_id name status');
